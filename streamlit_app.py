@@ -11,11 +11,10 @@ from pathlib import Path
 # -----------------------------------
 st.set_page_config(
     page_title="Ontario Regional Demand Intelligence",
-    page_icon="⚡",
     layout="wide"
 )
 
-st.title("⚡ Ontario Regional Demand Intelligence")
+st.title(" Regional Demand Forcasting")
 
 st.write(
     "Interactive decision-support prototype for "
