@@ -23,11 +23,14 @@ import pandas as pd
 import streamlit as st
 
 from forecast_dashboard import render_forecast_dashboard
+from theme_styles import apply_blue_theme
 
 st.set_page_config(
     page_title="Ontario Regional Demand Intelligence",
     layout="wide",
 )
+
+apply_blue_theme()
 
 st.title("Regional Demand Forecasting")
 st.write(

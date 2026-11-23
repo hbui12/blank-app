@@ -109,17 +109,19 @@ def render_forecast_dashboard() -> None:
     fig.add_trace(go.Scatter(
         x=day_df["Hour_End_EST"], y=day_df["Upper_Bound_MW"],
         mode="lines", line=dict(width=0), fill="tonexty",
-        fillcolor="rgba(100, 116, 139, 0.20)", name="Preliminary range",
+        fillcolor="rgba(56, 189, 248, 0.22)", name="Preliminary range",
         hovertemplate="Upper bound: %{y:,.1f} MW<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=day_df["Hour_End_EST"], y=day_df["Forecast_MW"],
         mode="lines+markers", name="Predicted demand",
+        line=dict(color="#2563EB", width=3),
+        marker=dict(color="#2563EB", size=6),
         hovertemplate="Hour ending: %{x|%I:%M %p}<br>Prediction: %{y:,.1f} MW<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=[chosen_hour], y=[point["Forecast_MW"]],
-        mode="markers", marker=dict(size=15, symbol="circle-open", line=dict(width=3)),
+        mode="markers", marker=dict(color="#0D9488", size=16, symbol="circle-open", line=dict(color="#0D9488", width=3)),
         name="Selected hour",
         hovertemplate="Selected: %{y:,.1f} MW<extra></extra>",
     ))
@@ -128,6 +130,12 @@ def render_forecast_dashboard() -> None:
         xaxis_title="Hour ending (EST)", yaxis_title="Electricity demand (MW)",
         hovermode="x unified", legend=dict(orientation="h", y=-0.25),
         margin=dict(l=20, r=20, t=65, b=65),
+        paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+        font=dict(color="#173354"),
+        title_font=dict(color="#0B2A50", size=19),
+        xaxis=dict(showgrid=True, gridcolor="#E6EFFA", zeroline=False),
+        yaxis=dict(showgrid=True, gridcolor="#E6EFFA", zeroline=False),
+        hoverlabel=dict(bgcolor="#EDF5FF", font_color="#173354"),
     )
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
