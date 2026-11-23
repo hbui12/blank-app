@@ -2,13 +2,13 @@
 
 Works alongside existing forecast_dashboard.py and model-testing code.
 
-Two supported input formats:
-* M4 analysis-ready observations: the exact 41 predictor columns plus Zone and Hour_End_EST.
-* Simple hourly history: zone demand, Ontario demand, market demand and zone weather.
+Customer-facing input format:
+* Hourly history containing zone demand, Ontario demand, market demand,
+  and historical zone weather. The app constructs lag-based model inputs.
 
-The raw-history feature builder is an experimental extension. Verify its
-hour/date and preprocessing conventions against the original M4 pipeline
-before treating future predictions as operational forecasts.
+This feature builder is still experimental. Verify its date/hour encoding,
+weather sourcing, units and preprocessing against the training pipeline
+before using it for operational decisions.
 """
 
 from pathlib import Path
@@ -190,64 +190,40 @@ def _show_results(model, x, timestamps, zone, actual=None):
     )
 
 
-def _analysis_ready_mode(model, feature_names):
-    st.write("Upload your M4 analysis-ready CSV containing the 41 model features, Zone and Hour_End_EST.")
-    st.caption("This verified input format uses the same feature definitions as the model's training dataset.")
-    file = st.file_uploader("Upload analysis-ready CSV", type="csv", key="custom_ready_csv")
-    if file is None:
-        st.info("Start with an M4 sample or export a subset from your M5 notebook.")
-        return
-    try:
-        raw = _read_dates(pd.read_csv(file))
-        missing = [c for c in feature_names if c not in raw.columns]
-        if missing:
-            raise ValueError(f"Missing original training features: {missing}")
-        zone = st.selectbox("Ontario zone", sorted(raw["Zone"].unique()), key="custom_ready_zone")
-        subset = raw[raw["Zone"] == zone].copy()
-        dates = sorted(subset["Hour_End_EST"].dt.date.unique())
-        day = st.selectbox("Forecast target date", dates, index=len(dates)-1, key="custom_ready_date")
-        subset = subset[subset["Hour_End_EST"].dt.date == day].sort_values("Hour_End_EST")
-        if len(subset) != 24 or subset["Hour_End_EST"].dt.hour.nunique() != 24:
-            st.warning(f"The selected day has {len(subset)} rows; choose a complete 24-hour day.")
-            return
-        x = subset[feature_names].apply(pd.to_numeric, errors="raise").astype("float32")
-        if not np.isfinite(x.to_numpy()).all():
-            raise ValueError("Input features have missing or non-finite values.")
-        st.success("24 hours and 41 exact training features verified.")
-        request_id = (file.name, file.size, zone, str(day))
-        if st.button("Generate 24-hour predictions", type="primary", key="custom_ready_go"):
-            st.session_state["custom_ready_request"] = request_id
-        if st.session_state.get("custom_ready_request") == request_id:
-            actual_col = next((c for c in ("Actual_Demand_MW", "Demand_MW", "Actual_MW") if c in subset), None)
-            actual = subset[actual_col].to_numpy() if actual_col else None
-            _show_results(model, x, subset["Hour_End_EST"], zone, actual)
-    except Exception as exc:
-        st.error(f"Unable to process this file: {exc}")
-
-
 def _raw_history_mode(model, feature_names):
-    st.write("Upload hourly historical demand and zone weather. The app builds the 41 lagged model features.")
-    st.warning(
-        "Experimental feature-preparation workflow: use the same data definitions, "
-        "units, zone-to-weather mapping and hourly-ending conventions as M4. "
-        "Validate predictions against the original M4 pipeline before relying on them."
+    st.write(
+        "Upload hourly electricity demand and weather observations. "
+        "The application will prepare the required model inputs automatically."
     )
-    with st.expander("Required raw CSV columns and format"):
+    st.info(
+        "The current model supports Ontario's 10 IESO zones. "
+        "Your file must contain hourly historical observations, including "
+        "the selected zone's demand, Ontario-wide demand, market demand, "
+        "temperature, humidity, and wind speed."
+    )
+    st.warning(
+        "Prototype feature preparation is not yet validated for new customer data. "
+        "Use the same hourly-ending time convention, measurement units, "
+        "market/zone definitions and weather-source mapping used during model training. "
+        "Confirm that generated features reproduce the training pipeline before operational use."
+    )
+    with st.expander("What should my CSV contain?"):
         st.code(",".join(RAW_REQUIRED), language="text")
         st.caption(
             "Each row is one zone-hour. Zone_Demand_MW is that zone's demand; "
             "Ontario_Demand_MW and Market_Demand_MW are the same provincial/market "
-            "series used in M4. Weather should be observed temperature (°C), "
-            "relative humidity (%), and wind (same units as M4). "
-            "Hour_End_EST must follow your training data's timestamp convention."
+            "series definitions used when training the model. Weather should "
+            "include historical temperature (°C), relative humidity (%), "
+            "and wind speed in the training dataset's units. "
+            "Hour_End_EST must use the training data's hourly-ending timestamp convention."
         )
         st.download_button(
-            "Download empty CSV template",
+            "Download CSV template",
             data=(",".join(RAW_REQUIRED)+"\n").encode("utf-8"),
             file_name="hourly_history_template.csv", mime="text/csv",
             key="custom_template",
         )
-    file = st.file_uploader("Upload hourly history CSV", type="csv", key="custom_raw_csv")
+    file = st.file_uploader("Upload historical electricity and weather CSV", type="csv", key="custom_raw_csv")
     if file is None:
         return
     try:
@@ -260,14 +236,14 @@ def _raw_history_mode(model, feature_names):
             df[col] = pd.to_numeric(df[col], errors="coerce")
         if ((df["Humidity_Pct"].dropna() < 0) | (df["Humidity_Pct"].dropna() > 100)).any():
             raise ValueError("Humidity_Pct must be between 0 and 100.")
-        zone = st.selectbox("Ontario zone", sorted(df["Zone"].unique()), key="custom_raw_zone")
+        zone = st.selectbox("Choose electricity zone", sorted(df["Zone"].unique()), key="custom_raw_zone")
         zone_df = df[df["Zone"] == zone].copy().sort_values("Hour_End_EST")
         min_date = (zone_df["Hour_End_EST"].min() + pd.Timedelta(hours=168)).date()
         max_date = (zone_df["Hour_End_EST"].max() + pd.Timedelta(hours=24)).date()
         if min_date > max_date:
             raise ValueError("At least one week of historical data is needed.")
         date = st.date_input(
-            "Prediction target date",
+            "Select prediction date",
             value=max_date, min_value=min_date, max_value=max_date,
             key="custom_raw_date",
         )
@@ -300,9 +276,13 @@ def _raw_history_mode(model, feature_names):
 def render_custom_forecast():
     st.header("Custom Demand Prediction")
     st.write(
-        "Use the existing 41-feature Random Forest to generate hourly predictions "
-        "from uploaded historical observations. This is a prototype, not a "
-        "validated live forecasting service."
+        "Select a region and target date, then upload historical electricity "
+        "and weather data to generate hourly demand predictions (MW). "
+        "The app creates the model inputs behind the scenes."
+    )
+    st.caption(
+        "Historical-data prototype, not a validated live forecasting service. "
+        "A full-day chart contains hourly predictions with separate 24-hour-ahead origins."
     )
     try:
         model, feature_names = load_saved_random_forest()
@@ -310,13 +290,4 @@ def render_custom_forecast():
         st.error(f"Model artifacts could not be loaded: {exc}")
         return
 
-    method = st.radio(
-        "Choose input format",
-        ("M4 analysis-ready data (recommended first test)",
-         "Simple hourly history (experimental automatic feature preparation)"),
-        key="custom_method",
-    )
-    if method.startswith("M4"):
-        _analysis_ready_mode(model, feature_names)
-    else:
-        _raw_history_mode(model, feature_names)
+    _raw_history_mode(model, feature_names)
