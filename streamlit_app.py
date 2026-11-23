@@ -18,6 +18,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from forecast_dashboard import render_forecast_dashboard
+from custom_forecast import render_custom_forecast
 from theme_styles import apply_blue_theme
 
 st.set_page_config(
@@ -32,9 +33,14 @@ st.write(
     "prediction across Ontario's 10 IESO zones."
 )
 
+
 view = st.sidebar.radio(
     "Select view",
-    ["Explore 2025 predictions", "Test the Random Forest model"],
+    [
+        "Explore 2025 predictions",
+        "Test the Random Forest model",
+        "Custom Demand Prediction"
+    ]
 )
 
 if view == "Explore 2025 predictions":
@@ -43,6 +49,9 @@ if view == "Explore 2025 predictions":
         "date, or hour updates the display automatically."
     )
     render_forecast_dashboard()
+
+elif view == "Custom Demand Prediction":
+    render_custom_forecast()
 
 else:
     st.info(
