@@ -85,42 +85,30 @@ def render_forecast_dashboard():
     if day_df.empty:
         st.info("There are no matched observations for this date. Choose another date.")
         return
-    
-# Available hours for the selected date
-hours = (
-    day_df["Hour_End_EST"]
-    .dropna()
-    .sort_values()
-    .drop_duplicates()
-    .tolist()
-)
-
-if not hours:
-    st.warning("No predictions are available for this date.")
-    return
-
-# Reset hour selection when the zone or date changes
-hour = st.sidebar.selectbox(
-    "Hour ending (EST)",
-    options=hours,
-    format_func=lambda value: value.strftime("%I:%M %p"),
-    key=f"saved2025_hour_{zone}_{day.isoformat()}"
-)
-
-# Find the matching prediction
-matching_rows = day_df.loc[
-    day_df["Hour_End_EST"] == hour
-]
-
-if matching_rows.empty:
-    st.warning(
-        "No forecast is available for the selected hour. "
-        "Please choose another hour."
+    # Only offer available hours for the selected zone and date.
+    hours = (
+        day_df["Hour_End_EST"]
+        .dropna()
+        .sort_values()
+        .drop_duplicates()
+        .tolist()
     )
-    return
+    if not hours:
+        st.warning("No hourly forecasts are available for this selection.")
+        return
 
-point = matching_rows.iloc[0]
-
+    # A new widget key resets stale hour selections when zone or date changes.
+    hour = st.sidebar.selectbox(
+        "Hour ending (EST)",
+        options=hours,
+        format_func=lambda value: value.strftime("%I:%M %p"),
+        key=f"saved2025_hour_{zone}_{day.isoformat()}",
+    )
+    selected_rows = day_df.loc[day_df["Hour_End_EST"] == hour]
+    if selected_rows.empty:
+        st.warning("No data found for the selected hour. Please select another hour.")
+        return
+    point = selected_rows.iloc[0]
 
     st.markdown(
         f"**Zone:** {zone}  |  **Date:** {day:%B %d, %Y}  |  "
